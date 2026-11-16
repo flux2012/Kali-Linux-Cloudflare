@@ -1,0 +1,56 @@
+name: Kali Linux VPS
+on: workflow_dispatch
+
+jobs:
+  kali-vps:
+    runs-on: ubuntu-latest
+    # This creates the Kali environment
+    container:
+      image: kalilinux/kali-rolling
+      options: --privileged  # Required for some network tools
+    
+    steps:
+      - name: Update & Install Essentials
+        run: |
+          # 1. Update and Install "Headless" Kali Tools (CLI only, no GUI)
+          # This installs standard tools like Nmap, Metasploit, Wireshark-cli, etc.
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y kali-linux-headless openssh-server curl iproute2 procps
+
+      - name: Setup SSH (Root)
+        run: |
+          # 2. Setup SSH
+          mkdir -p /run/sshd
+          
+          # Set root password
+          echo "root:rohan2026" | chpasswd
+          
+          # Allow Root Login
+          sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          
+          # Start SSH Daemon manually (Systemd doesn't work in containers)
+          /usr/sbin/sshd -D &
+
+      - name: Install Cloudflared
+        run: |
+          # 3. Install Cloudflared
+          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          dpkg -i cloudflared.deb
+
+      - name: Start Tunnel
+        run: |
+          # 4. Start Tunnel
+          cloudflared tunnel --url ssh://localhost:22 --logfile tunnel.log > /dev/null 2>&1 &
+          
+          echo "Waiting for Cloudflare link..."
+          sleep 10
+          echo "=========================================="
+          grep -o 'https://[^[:space:]]*\.trycloudflare\.com' tunnel.log || echo "Failed to find link. Try refreshing the log."
+          echo "=========================================="
+
+      - name: Keep Alive
+        run: |
+          # 5. Keep Alive for 6 Hours
+          echo "Kali VPS is live. Do not cancel the run!"
+          sleep 21600
